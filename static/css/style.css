@@ -1,0 +1,9 @@
+.option-menu {
+  margin-top: 8px;
+}
+
+pre#code-block {
+  background: #f8f9fa;
+  padding: 12px;
+  white-space: pre-wrap;
+}
