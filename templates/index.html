@@ -54,11 +54,7 @@
               <div><input type="radio" name="sink" value="Streaming (Kafka)" id="sink-kafka"> <label for="sink-kafka">Streaming (Kafka)</label></div>
             </div>
 
-            <div id="sink-config" class="mt-2 d-none">
-              <label for="sink-config-input" class="form-label">Cấu hình Sink (ví dụ)</label>
-              <input id="sink-config-input" class="form-control" placeholder="">
-              <div class="form-text">Ví dụ: `broker1:9092,broker2:9092` hoặc `topic: output-topic`.</div>
-            </div>
+            <!-- sink-config removed per request -->
           </div>
         </div>
       </div>
@@ -72,6 +68,29 @@
           <h5>Mã mẫu Spark (Python)</h5>
           <pre><code id="code-block" class="language-python"># Nhấn "Áp dụng" để hiển thị mã mẫu
 # Mẫu: sẽ bổ sung sau</code></pre>
+        </div>
+      </div>
+      
+      <div class="row g-3 mt-3">
+        <div class="col-md-6">
+          <div class="card p-3">
+            <h6>Liên hệ</h6>
+            <div>Email: <strong>baohunt168@gmail.com</strong></div>
+            <div>Mobile: <strong>0368134147</strong></div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card p-3">
+            <h6>Các vấn đề thường gặp</h6>
+            <div id="faq-list" class="mb-2">
+              <!-- FAQ items inserted here -->
+            </div>
+            <div>
+              <button id="add-faq" class="btn btn-sm btn-outline-secondary">Thêm câu hỏi</button>
+            </div>
+            <div class="form-text mt-2">Người dùng bấm vào câu hỏi sẽ thấy câu trả lời tương ứng.</div>
+          </div>
         </div>
       </div>
     </div>

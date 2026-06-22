@@ -22,14 +22,17 @@ def build_sample_code(source, ingest, sink):
 
     # Decide imports and snippets based on source
     source_snippet = []
+    shared_jdbc = False
     if source == 'HDFS':
         source_snippet.append("# HDFS read example (CSV)")
         source_snippet.append("df = spark.read.csv(\"hdfs://namenode:9000/path-to-file.csv\", header=True, inferSchema=True)")
         source_snippet.append("# or: df = spark.read.parquet('hdfs://namenode:9000/path-to-file.parquet')")
     elif source == 'RDBMS':
+        # When source is RDBMS, expose JDBC config so users see jdbc_url and properties
+        shared_jdbc = True
         source_snippet.append("# JDBC read example (RDBMS)")
-        source_snippet.append("jdbc_url = \"jdbc:yourdb://host:port/service\"  # ví dụ: jdbc:oracle:thin:@//hostname:1521/service_name")
-        source_snippet.append("connection_properties = {\"user\": \"your-user\", \"password\": \"your-password\", \"driver\": \"your.jdbc.Driver\"}")
+        source_snippet.append("jdbc_url = \"jdbc:postgresql://dbserver:5432/mydatabase\"  # adjust for your DB")
+        source_snippet.append("connection_properties = {\"user\": \"dbuser\", \"password\": \"dbpassword\", \"driver\": \"org.postgresql.Driver\"}")
         source_snippet.append("df = spark.read.jdbc(url=jdbc_url, table=\"TABLE_NAME\", properties=connection_properties)")
     elif source == 'Web API':
         imports.add("import requests")
@@ -75,9 +78,18 @@ def build_sample_code(source, ingest, sink):
     if sink and ('HDFS' in (sink or '')):
         sink_snippet.append("# Write to HDFS (CSV)")
         sink_snippet.append("df.write.mode('overwrite').csv(\"hdfs://namenode:9000/output/path\")")
+    if sink and ('flat' in (sink or '').lower() or 'flat file' in (sink or '').lower()):
+        sink_snippet.append("# Write to flat file (CSV)")
+        sink_snippet.append("df.write.mode('overwrite').csv(\"/path/to/output.csv\")  # or .parquet(...)")
     if sink and ('Database' in (sink or '') or 'RDBMS' in (sink or '')):
-        sink_snippet.append("# JDBC write example")
-        sink_snippet.append("# df.write.jdbc(url=jdbc_url, table=\"TABLE_NAME\", mode=\"append\", properties=connection_properties)")
+        sink_snippet.append("# JDBC write example (example config)")
+        # If the source already exposed JDBC config (RDBMS), reuse those variables
+        if shared_jdbc:
+            sink_snippet.append("df.write.jdbc(url=jdbc_url, table=\"TABLE_NAME\", mode=\"append\", properties=connection_properties)")
+        else:
+            sink_snippet.append("jdbc_url = \"jdbc:postgresql://dbserver:5432/mydatabase\"")
+            sink_snippet.append("connection_properties = {\"user\": \"dbuser\", \"password\": \"dbpassword\", \"driver\": \"org.postgresql.Driver\"}")
+            sink_snippet.append("df.write.jdbc(url=jdbc_url, table=\"TABLE_NAME\", mode=\"append\", properties=connection_properties)")
 
     if not sink_snippet:
         sink_snippet.append("# Sink placeholder: implement write logic for chosen sink")
