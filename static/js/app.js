@@ -62,12 +62,30 @@ document.addEventListener('DOMContentLoaded', function () {
     const container = document.getElementById('faq-list');
     if (!container) return;
     container.innerHTML = '';
-    const faqs = loadFaqs();
-    if (faqs.length === 0) {
+    const serverFaqs = window.DEFAULT_FAQS || [];
+    const clientFaqs = loadFaqs();
+    if (serverFaqs.length === 0 && clientFaqs.length === 0) {
       container.innerHTML = '<div class="text-muted">Chưa có mục nào. Nhấn "Thêm câu hỏi" để tạo.</div>';
       return;
     }
-    faqs.forEach((f, idx) => {
+    // render server-side FAQs as links to /faq/<id>
+    serverFaqs.forEach((f, idx) => {
+      const q = document.createElement('div');
+      q.className = 'mb-2';
+      const a = document.createElement('a');
+      a.href = '/faq/' + idx;
+      a.className = 'me-2';
+      a.textContent = f.question;
+      const btn = document.createElement('a');
+      btn.href = '/faq/' + idx;
+      btn.className = 'btn btn-sm btn-outline-primary';
+      btn.textContent = 'Đọc';
+      q.appendChild(a);
+      q.appendChild(btn);
+      container.appendChild(q);
+    });
+    // render client-side FAQs (user-added) inline
+    clientFaqs.forEach((f, idx) => {
       const q = document.createElement('div');
       q.className = 'mb-2';
       const btn = document.createElement('button');

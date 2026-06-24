@@ -11,6 +11,7 @@
   <body class="p-4">
     <div class="container">
       <h1 class="mb-4">DataFlow Demo</h1>
+      <p class="lead">Thiết kế luồng dữ liệu của bạn: chọn Source, Ingestion và Sink để tạo nên pipeline hoàn chỉnh</p>
 
       <div class="row g-3 mb-3">
         <div class="col-md-4">
@@ -65,7 +66,7 @@
 
       <div class="card">
         <div class="card-body">
-          <h5>Mã mẫu Spark (Python)</h5>
+          <h5>Code mẫu Spark (Python)</h5>
           <pre><code id="code-block" class="language-python"># Nhấn "Áp dụng" để hiển thị mã mẫu
 # Mẫu: sẽ bổ sung sau</code></pre>
         </div>
@@ -97,6 +98,10 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
     <script>hljs.configure({useBR:false}); hljs.highlightAll();</script>
+    <script>
+      // server-provided default FAQs
+      window.DEFAULT_FAQS = {{ default_faqs|tojson | safe }};
+    </script>
     <script src="/static/js/app.js"></script>
   </body>
 </html>
