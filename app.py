@@ -3,143 +3,171 @@ from flask import Flask, render_template, request, jsonify
 app = Flask(__name__)
 
 
+# Default FAQs reused by index and faq pages
+DEFAULT_FAQS = [
+    {
+        "question": "Các điểm nghẽn thường gặp trong Pipeline khi Streaming",
+        "answer": (
+            "- Kafka topic không được phân partition hợp lý\n"
+            "Giải pháp:\n"
+            "  . Tăng số partition khi tạo topic để tăng khả năng song song:\n"
+            "    kafka-topics.sh --create --topic my_topic --partitions 6 --replication-factor 3 --bootstrap-server localhost:9092\n\n"
+            "  . Dùng key khi producer gửi message:\n"
+            "    producer.send(\"topic_name\", key=\"column_name\", value=\"...\")\n"
+        )
+    },
+    {
+        "question": "Các vấn đề và giải pháp tối ưu Spark – Database",
+        "answer": (
+            "a) Phân chia partition khi đọc dữ liệu\n"
+            "Vấn đề: Nếu không phân chia partition, Spark chỉ tạo một task duy nhất để đọc toàn bộ dữ liệu → hiệu năng thấp.\n"
+            "Giải pháp: Sử dụng cơ chế partitioning của JDBC với các tham số: partitionColumn, lowerBound, upperBound, numPartitions.\n\n"
+            "b) Pushdown query về Database\n"
+            "Vấn đề: Nếu Spark đọc toàn bộ dữ liệu rồi mới lọc/join, sẽ tốn tài nguyên.\n"
+            "Giải pháp: Đẩy các lệnh WHERE/JOIN/AGGREGATE xuống Database để DB xử lý trước.\n\n"
+            "c) Fetch Size\n"
+            "Giải pháp: Điều chỉnh tham số .option(\"fetchsize\", 10000) để cân bằng round-trip và bộ nhớ.\n\n"
+            "d) Lưu trữ trung gian (Staging) & CDC\n"
+            "Vấn đề: Đọc trực tiếp từ DB trong streaming có thể gây tải nặng cho hệ giao dịch.\n"
+            "Giải pháp: Dùng Staging layer (HDFS/Data Lake) hoặc CDC (Debezium + Kafka) để lấy dữ liệu thay đổi theo thời gian thực."
+        )
+    },
+    {
+        "question": "12 bước làm sạch dữ liệu (Oracle SQL)",
+        "answer": (
+            "Bước 1: Thay thế NULL bằng giá trị mặc định\n"
+            "SQL:\n"
+            "SELECT NVL(col1, 'Default Value') AS col1_clean\n"
+            "FROM Table;\n\n"
+            "Bước 2: Xóa record chứa NULL\n"
+            "SQL:\n"
+            "DELETE FROM Table\n"
+            "WHERE col IS NULL;\n\n"
+            "Bước 3: Tìm dòng trùng lặp\n"
+            "SQL:\n"
+            "SELECT col_name, COUNT(*)\n"
+            "FROM Table\n"
+            "GROUP BY col_name\n"
+            "HAVING COUNT(*) > 1;\n\n"
+            "Bước 4: Xóa dòng trùng lặp, giữ lại bản ghi nhỏ nhất theo id\n"
+            "SQL:\n"
+            "DELETE FROM Table\n"
+            "WHERE id NOT IN (SELECT MIN(id) FROM Table GROUP BY col);\n\n"
+            "Bước 5: Sửa giá trị sai / chuẩn hóa dữ liệu\n"
+            "SQL:\n"
+            "UPDATE Table\n"
+            "SET col_name = 'CorrectValue'\n"
+            "WHERE col_name = 'WrongValue';\n\n"
+            "Bước 6: Chuyển text sang lowercase\n"
+            "SQL:\n"
+            "UPDATE Table\n"
+            "SET col_name = LOWER(col_name);\n\n"
+            "Bước 7: Phát hiện outlier\n"
+            "SQL:\n"
+            "SELECT *\n"
+            "FROM Table\n"
+            "WHERE col_name > upper_limit OR col_name < lower_limit;\n\n"
+            "Bước 8: Loại bỏ outlier\n"
+            "SQL:\n"
+            "DELETE FROM Table\n"
+            "WHERE col_name > upper_limit OR col_name < lower_limit;\n\n"
+            "Bước 9: Xóa khoảng trắng thừa\n"
+            "SQL:\n"
+            "UPDATE Table\n"
+            "SET col_name = TRIM(col_name);\n\n"
+            "Bước 10: Tách fullname thành first_name và last_name\n"
+            "SQL:\n"
+            "UPDATE Table\n"
+            "SET first_name = SUBSTR(full_name, 1, INSTR(full_name, ' ') - 1),\n"
+            "    last_name = SUBSTR(full_name, INSTR(full_name, ' ') + 1);\n\n"
+            "Bước 11: Chuẩn hóa kiểu dữ liệu ngày tháng\n"
+            "SQL:\n"
+            "UPDATE Table\n"
+            "SET date_col = TO_DATE(date_col, 'YYYY-MM-DD');\n\n"
+            "Bước 12: Loại bỏ ký tự đặc biệt\n"
+            "SQL:\n"
+            "UPDATE Table\n"
+            "SET col_name = REGEXP_REPLACE(col_name, '[^a-zA-Z0-9]', '');\n"
+        )
+    },
+    {
+        "question": "Làm sao join hai bảng hàng tỷ dòng trong Spark",
+        "answer": (
+            "Các chiến lược tối ưu join dữ liệu lớn trong Spark:\n\n"
+            "1. Bucket By theo join key\n"
+            "Khi ghi dữ liệu xuống HDFS, cấu hình bucketBy cho cả hai bảng theo cùng một join key và cùng số lượng bucket.\n"
+            "Nhờ đó, các bản ghi có cùng key sẽ được phân bổ vào cùng bucket trên đĩa.\n"
+            "Khi Spark thực hiện join, nó chỉ cần đọc các cặp bucket tương ứng vào RAM để join, không cần shuffle toàn bộ dữ liệu → giảm mạnh chi phí mạng và thời gian.\n\n"
+            "2. Partition By theo cột join\n"
+            "Nếu cả hai bảng đều được partitionBy theo cùng một cột (ví dụ join key hoặc cột thời gian), Spark có thể tận dụng việc đọc dữ liệu theo partition để giảm khối lượng dữ liệu cần xử lý.\n"
+            "Điều này đặc biệt hữu ích khi join theo cột có tính phân vùng tự nhiên (ví dụ ngày, tháng).\n\n"
+            "3. Kết hợp partitionBy và bucketBy (ví dụ):\n"
+            "bigDF.write\n"
+            "    .partitionBy(\"date\")\n"
+            "    .bucketBy(200, \"join_key\")\n"
+            "    .sortBy(\"join_key\")\n"
+            "    .saveAsTable(\"big_table_partitioned_bucketed\")\n\n"
+            "mediumDF.write\n"
+            "    .partitionBy(\"date\")\n"
+            "    .bucketBy(200, \"join_key\")\n"
+            "    .sortBy(\"join_key\")\n"
+            "    .saveAsTable(\"medium_table_partitioned_bucketed\")\n\n"
+            "joinedDF = spark.table(\"big_table_partitioned_bucketed\")\n"
+            "    .join(spark.table(\"medium_table_partitioned_bucketed\"), [\"join_key\"])\n\n"
+            "4. Lọc sớm nhất có thể (Predicate Pushdown)\n"
+            "Áp dụng filter, where, select ngay từ đầu pipeline để loại bỏ dữ liệu dư thừa trước khi join.\n\n"
+            "Ví dụ:\n"
+            "filteredBig = bigDF\n"
+            "    .filter(bigDF.date >= \"2026-01-01\")\n"
+            "    .select(\"join_key\", \"colA\", \"colB\")\n\n"
+            "filteredMedium = mediumDF\n"
+            "    .filter(mediumDF.status == \"active\")\n"
+            "    .select(\"join_key\", \"colX\")\n\n"
+            "joinedDF = filteredBig.join(filteredMedium, [\"join_key\"])"
+        )
+    }
+    ,
+    {
+        "question": "Làm sao khi dữ liệu bị lệch (Data Skew)",
+        "answer": (
+            "Skewed data trong data pipeline là một vấn đề khá phổ biến\n"
+            "và gây đau đầu cho nhiều kỹ sư dữ liệu. Nó xảy ra khi một số key hoặc partition\n"
+            "trong dữ liệu có khối lượng lớn hơn hẳn so với phần còn lại, dẫn đến việc phân\n"
+            "phối không đều giữa các worker. Kết quả là pipeline bị nghẽn ở một vài node,\n"
+            "làm giảm hiệu năng tổng thể.\n\n"
+            "Nguyên nhân thường gặp:\n"
+            "- Key distribution không đều: Ví dụ khi join theo một cột mà giá trị \"hot key\" xuất hiện quá nhiều.\n"
+            "- Partitioning strategy chưa hợp lý: Hash partition hoặc range partition có thể tạo ra imbalance.\n"
+            "- Data quality issues: Dữ liệu bị trùng lặp hoặc thiếu normalization.\n\n"
+            "Ví dụ minh họa:\n"
+            "Ta có bảng Orders với 100.000 dòng, cột `Status` gồm:\n\n"
+            "- 99.998 dòng có giá trị `NEW`\n"
+            "- 1 dòng có giá trị `OLD`\n"
+            "- 1 dòng có giá trị `CANCELLED`\n\n"
+            "Khi thực hiện Orders.groupBy(\"status\").count(), Spark sẽ shuffle theo key. Với spark.sql.shuffle.partitions = 200, phần lớn partition sẽ rỗng, trong khi partition chứa giá trị `NEW` phải gánh gần toàn bộ dữ liệu → gây skew.\n\n"
+            "Cách xử lý:\n"
+            "1. Giảm số partition xuống bằng số key:\n"
+            "Spark.conf.set(\"spark.sql.shuffle.partitions\", \"3\")\n\n"
+            "2. Bật adaptive execution để Spark tự điều chỉnh:\n"
+            "Spark.conf.set(\"spark.sql.adaptive.enabled\", \"true\")\n\n"
+            "Dùng kỹ thuật Salting Key trong join:\n"
+            "from pyspark.sql import functions as F\n\n"
+            "# Bảng Orders: thêm salt ngẫu nhiên từ 0-9\n"
+            "salted_orders = Orders.withColumn(\"userId_salted\",\n"
+            "    F.concat(F.col(\"userId\"), F.lit(\"_\"), (F.rand()*10).cast(\"int\")))\n\n"
+            "# Bảng Users: replicate theo cùng số salt\n"
+            "salted_users = Users.withColumn(\"salt\", F.explode(F.array([F.lit(i) for i in range(10)]))).withColumn(\"userId_salted\", F.concat(F.col(\"userId\"), F.lit(\"_\"), F.col(\"salt\")))\n\n"
+            "# Join theo userId_salted\n"
+            "result = salted_orders.join(salted_users, \"userId_salted\")\n\n"
+            "# Sau join, có thể group lại theo userId gốc nếu cần\n"
+            "final_result = result.groupBy(\"userId\").agg(F.collect_list(\"product\").alias(\"products\"))\n\n"
+        )
+    }
+]
+
+
 @app.route('/')
 def index():
-    DEFAULT_FAQS = [
-        {
-            "question": "Các điểm nghẽn thường gặp trong Pipeline khi Streaming",
-            "answer": (
-                "- Kafka topic không được phân partition hợp lý\n"
-                "Giải pháp:\n"
-                "  . Tăng số partition khi tạo topic để tăng khả năng song song:\n"
-                "    kafka-topics.sh --create \\\n+  --topic my_topic \\\n+  --partitions 6 \\\n+  --replication-factor 3 \\\n+  --bootstrap-server localhost:9092\n\n"
-                "  . Dùng key khi producer gửi message:\n"
-                "    producer.send(\"topic_name\", key=\"column_name\", value=\"...\")\n"
-            )
-        },
-        {
-            "question": "Các vấn đề và giải pháp tối ưu Spark – Database",
-            "answer": (
-                "a) Phân chia partition khi đọc dữ liệu\n"
-                "Vấn đề: Nếu không phân chia partition, Spark chỉ tạo một task duy nhất để đọc toàn bộ dữ liệu → hiệu năng thấp.\n"
-                "Giải pháp: Sử dụng cơ chế partitioning của JDBC với các tham số: partitionColumn, lowerBound, upperBound, numPartitions.\n\n"
-                "b) Pushdown query về Database\n"
-                "Vấn đề: Nếu Spark đọc toàn bộ dữ liệu rồi mới lọc/join, sẽ tốn tài nguyên.\n"
-                "Giải pháp: Đẩy các lệnh WHERE/JOIN/AGGREGATE xuống Database để DB xử lý trước.\n\n"
-                "c) Fetch Size\n"
-                "Giải pháp: Điều chỉnh tham số .option(\"fetchsize\", 10000) để cân bằng round-trip và bộ nhớ.\n\n"
-                "d) Lưu trữ trung gian (Staging) & CDC\n"
-                "Vấn đề: Đọc trực tiếp từ DB trong streaming có thể gây tải nặng cho hệ giao dịch.\n"
-                "Giải pháp: Dùng Staging layer (HDFS/Data Lake) hoặc CDC (Debezium + Kafka) để lấy dữ liệu thay đổi theo thời gian thực."
-            )
-        },
-        {
-            "question": "12 bước làm sạch dữ liệu (Oracle SQL)",
-            "answer": (
-                "Bước 1: Thay thế NULL bằng giá trị mặc định\n"
-                "SQL:\n"
-                "SELECT NVL(col1, 'Default Value') AS col1_clean\n"
-                "FROM Table;\n\n"
-
-                "Bước 2: Xóa record chứa NULL\n"
-                "SQL:\n"
-                "DELETE FROM Table\n"
-                "WHERE col IS NULL;\n\n"
-
-                "Bước 3: Tìm dòng trùng lặp\n"
-                "SQL:\n"
-                "SELECT col_name, COUNT(*)\n"
-                "FROM Table\n"
-                "GROUP BY col_name\n"
-                "HAVING COUNT(*) > 1;\n\n"
-
-                "Bước 4: Xóa dòng trùng lặp, giữ lại bản ghi nhỏ nhất theo id\n"
-                "SQL:\n"
-                "DELETE FROM Table\n"
-                "WHERE id NOT IN (SELECT MIN(id) FROM Table GROUP BY col);\n\n"
-
-                "Bước 5: Sửa giá trị sai / chuẩn hóa dữ liệu\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET col_name = 'CorrectValue'\n"
-                "WHERE col_name = 'WrongValue';\n\n"
-
-                "Bước 6: Chuyển text sang lowercase\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET col_name = LOWER(col_name);\n\n"
-
-                "Bước 7: Phát hiện outlier\n"
-                "SQL:\n"
-                "SELECT *\n"
-                "FROM Table\n"
-                "WHERE col_name > upper_limit OR col_name < lower_limit;\n\n"
-
-                "Bước 8: Loại bỏ outlier\n"
-                "SQL:\n"
-                "DELETE FROM Table\n"
-                "WHERE col_name > upper_limit OR col_name < lower_limit;\n\n"
-
-                "Bước 9: Xóa khoảng trắng thừa\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET col_name = TRIM(col_name);\n\n"
-
-                "Bước 10: Tách fullname thành first_name và last_name\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET first_name = SUBSTR(full_name, 1, INSTR(full_name, ' ') - 1),\n"
-                "    last_name = SUBSTR(full_name, INSTR(full_name, ' ') + 1);\n\n"
-
-                "Bước 11: Chuẩn hóa kiểu dữ liệu ngày tháng\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET date_col = TO_DATE(date_col, 'YYYY-MM-DD');\n\n"
-
-                "Bước 12: Loại bỏ ký tự đặc biệt\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET col_name = REGEXP_REPLACE(col_name, '[^a-zA-Z0-9]', '');\n"
-            )
-        }
-        ,
-        {
-            "question": "Làm sao join hai bảng hàng tỷ dòng trong Spark",
-            "answer": (
-                "Các chiến lược tối ưu join dữ liệu lớn trong Spark:\n\n"
-                "1. Bucket By theo join key\n"
-                "Khi ghi dữ liệu xuống HDFS, cấu hình bucketBy cho cả hai bảng theo cùng một join key và cùng số lượng bucket.\n"
-                "Nhờ đó, các bản ghi có cùng key sẽ được phân bổ vào cùng bucket trên đĩa.\n"
-                "Khi Spark thực hiện join, nó chỉ cần đọc các cặp bucket tương ứng vào RAM để join, không cần shuffle toàn bộ dữ liệu → giảm mạnh chi phí mạng và thời gian.\n\n"
-                "2. Partition By theo cột join\n"
-                "Nếu cả hai bảng đều được partitionBy theo cùng một cột (ví dụ join key hoặc cột thời gian), Spark có thể tận dụng việc đọc dữ liệu theo partition để giảm khối lượng dữ liệu cần xử lý.\n"
-                "Điều này đặc biệt hữu ích khi join theo cột có tính phân vùng tự nhiên (ví dụ ngày, tháng).\n\n"
-                "3. Kết hợp partitionBy và bucketBy (ví dụ):\n"
-                "bigDF.write\n"
-                "    .partitionBy(\"date\")\n"
-                "    .bucketBy(200, \"join_key\")\n"
-                "    .sortBy(\"join_key\")\n"
-                "    .saveAsTable(\"big_table_partitioned_bucketed\")\n\n"
-                "mediumDF.write\n"
-                "    .partitionBy(\"date\")\n"
-                "    .bucketBy(200, \"join_key\")\n"
-                "    .sortBy(\"join_key\")\n"
-                "    .saveAsTable(\"medium_table_partitioned_bucketed\")\n\n"
-                "joinedDF = spark.table(\"big_table_partitioned_bucketed\")\n"
-                "    .join(spark.table(\"medium_table_partitioned_bucketed\"), [\"join_key\"])\n\n"
-                "4. Lọc sớm nhất có thể (Predicate Pushdown)\n"
-                "Áp dụng filter, where, select ngay từ đầu pipeline để loại bỏ dữ liệu dư thừa trước khi join.\n\n"
-                "Ví dụ:\n"
-                "filteredBig = bigDF\n"
-                "    .filter(bigDF.date >= \"2026-01-01\")\n"
-                "    .select(\"join_key\", \"colA\", \"colB\")\n\n"
-                "filteredMedium = mediumDF\n"
-                "    .filter(mediumDF.status == \"active\")\n"
-                "    .select(\"join_key\", \"colX\")\n\n"
-                "joinedDF = filteredBig.join(filteredMedium, [\"join_key\"])"
-            )
-        }
-    ]
     return render_template('index.html', default_faqs=DEFAULT_FAQS)
 
 
@@ -243,7 +271,6 @@ def build_sample_code(source, ingest, sink):
     if sink and 'kafka' in (sink or '').lower():
         sink_snippet.append("# Kafka streaming sink example")
         sink_snippet.append(f"out = {main_df}.selectExpr(\"to_json(struct(*)) AS value\")")
-        # concise chained writeStream call (single-line compact form)
         sink_snippet.append("query = out.writeStream.format('kafka').option('kafka.bootstrap.servers', 'broker1:9092').option('topic', 'output-topic').option('checkpointLocation', '/tmp/checkpoint').start()")
     # Streaming -> HDFS: use streaming write when ingestion is Streaming
     if ingest == 'Streaming' and sink and ('HDFS' in (sink or '')):
@@ -290,7 +317,6 @@ def build_sample_code(source, ingest, sink):
         sink_snippet.append("query.awaitTermination()")
     elif sink and ('Database' in (sink or '') or 'RDBMS' in (sink or '')):
         sink_snippet.append("# JDBC write example (example config)")
-        # If the source already exposed JDBC config (RDBMS), reuse those variables
         if shared_jdbc:
             sink_snippet.append("df.write.jdbc(url=jdbc_url, table=\"TABLE_NAME\", mode=\"append\", properties=connection_properties)")
         else:
@@ -324,13 +350,10 @@ def build_sample_code(source, ingest, sink):
     lines.append("    # Processing placeholder")
     lines.append("    # ... transform df as needed ...")
     lines.append("")
-    # (Top-of-file notes already include Airflow / Web Scraping guidance when relevant)
-
     for s in sink_snippet:
         lines.append("    " + s)
     lines.append("")
 
-    # (Feasibility note moved to header in Vietnamese)
     lines.append("    spark.stop()")
     lines.append("")
     lines.append("if __name__ == '__main__':")
@@ -350,141 +373,6 @@ def generate():
 
 @app.route('/faq/<int:fid>')
 def faq_page(fid):
-    DEFAULT_FAQS = [
-        {
-            "question": "Các điểm nghẽn thường gặp trong Pipeline khi Streaming",
-            "answer": (
-                "- Kafka topic không được phân partition hợp lý\n"
-                "Giải pháp:\n"
-                "  . Tăng số partition khi tạo topic để tăng khả năng song song:\n"
-                "    kafka-topics.sh --create \\\n+  --topic my_topic \\\n+  --partitions 6 \\\n+  --replication-factor 3 \\\n+  --bootstrap-server localhost:9092\n\n"
-                "  . Dùng key khi producer gửi message:\n"
-                "    producer.send(\"topic_name\", key=\"column_name\", value=\"...\")\n"
-            )
-        },
-        {
-            "question": "Các vấn đề và giải pháp tối ưu Spark – Database",
-            "answer": (
-                "a) Phân chia partition khi đọc dữ liệu\n"
-                "Vấn đề: Nếu không phân chia partition, Spark chỉ tạo một task duy nhất để đọc toàn bộ dữ liệu → hiệu năng thấp.\n"
-                "Giải pháp: Sử dụng cơ chế partitioning của JDBC với các tham số: partitionColumn, lowerBound, upperBound, numPartitions.\n\n"
-                "b) Pushdown query về Database\n"
-                "Vấn đề: Nếu Spark đọc toàn bộ dữ liệu rồi mới lọc/join, sẽ tốn tài nguyên.\n"
-                "Giải pháp: Đẩy các lệnh WHERE/JOIN/AGGREGATE xuống Database để DB xử lý trước.\n\n"
-                "c) Fetch Size\n"
-                "Giải pháp: Điều chỉnh tham số .option(\"fetchsize\", 10000) để cân bằng round-trip và bộ nhớ.\n\n"
-                "d) Lưu trữ trung gian (Staging) & CDC\n"
-                "Vấn đề: Đọc trực tiếp từ DB trong streaming có thể gây tải nặng cho hệ giao dịch.\n"
-                "Giải pháp: Dùng Staging layer (HDFS/Data Lake) hoặc CDC (Debezium + Kafka) để lấy dữ liệu thay đổi theo thời gian thực."
-            )
-        },
-        {
-            "question": "12 bước làm sạch dữ liệu (Oracle SQL)",
-            "answer": (
-                "Bước 1: Thay thế NULL bằng giá trị mặc định\n"
-                "SQL:\n"
-                "SELECT NVL(col1, 'Default Value') AS col1_clean\n"
-                "FROM Table;\n\n"
-
-                "Bước 2: Xóa record chứa NULL\n"
-                "SQL:\n"
-                "DELETE FROM Table\n"
-                "WHERE col IS NULL;\n\n"
-
-                "Bước 3: Tìm dòng trùng lặp\n"
-                "SQL:\n"
-                "SELECT col_name, COUNT(*)\n"
-                "FROM Table\n"
-                "GROUP BY col_name\n"
-                "HAVING COUNT(*) > 1;\n\n"
-
-                "Bước 4: Xóa dòng trùng lặp, giữ lại bản ghi nhỏ nhất theo id\n"
-                "SQL:\n"
-                "DELETE FROM Table\n"
-                "WHERE id NOT IN (SELECT MIN(id) FROM Table GROUP BY col);\n\n"
-
-                "Bước 5: Sửa giá trị sai / chuẩn hóa dữ liệu\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET col_name = 'CorrectValue'\n"
-                "WHERE col_name = 'WrongValue';\n\n"
-
-                "Bước 6: Chuyển text sang lowercase\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET col_name = LOWER(col_name);\n\n"
-
-                "Bước 7: Phát hiện outlier\n"
-                "SQL:\n"
-                "SELECT *\n"
-                "FROM Table\n"
-                "WHERE col_name > upper_limit OR col_name < lower_limit;\n\n"
-
-                "Bước 8: Loại bỏ outlier\n"
-                "SQL:\n"
-                "DELETE FROM Table\n"
-                "WHERE col_name > upper_limit OR col_name < lower_limit;\n\n"
-
-                "Bước 9: Xóa khoảng trắng thừa\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET col_name = TRIM(col_name);\n\n"
-
-                "Bước 10: Tách fullname thành first_name và last_name\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET first_name = SUBSTR(full_name, 1, INSTR(full_name, ' ') - 1),\n"
-                "    last_name = SUBSTR(full_name, INSTR(full_name, ' ') + 1);\n\n"
-
-                "Bước 11: Chuẩn hóa kiểu dữ liệu ngày tháng\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET date_col = TO_DATE(date_col, 'YYYY-MM-DD');\n\n"
-
-                "Bước 12: Loại bỏ ký tự đặc biệt\n"
-                "SQL:\n"
-                "UPDATE Table\n"
-                "SET col_name = REGEXP_REPLACE(col_name, '[^a-zA-Z0-9]', '');\n"
-            )
-        }
-        ,
-        {
-            "question": "Làm sao join hai bảng hàng tỷ dòng trong Spark",
-            "answer": (
-                "Các chiến lược tối ưu join dữ liệu lớn trong Spark:\n\n"
-                "1. Bucket By theo join key\n"
-                "Khi ghi dữ liệu xuống HDFS, cấu hình bucketBy cho cả hai bảng theo cùng một join key và cùng số lượng bucket.\n"
-                "Nhờ đó, các bản ghi có cùng key sẽ được phân bổ vào cùng bucket trên đĩa.\n"
-                "Khi Spark thực hiện join, nó chỉ cần đọc các cặp bucket tương ứng vào RAM để join, không cần shuffle toàn bộ dữ liệu → giảm mạnh chi phí mạng và thời gian.\n\n"
-                "2. Partition By theo cột join\n"
-                "Nếu cả hai bảng đều được partitionBy theo cùng một cột (ví dụ join key hoặc cột thời gian), Spark có thể tận dụng việc đọc dữ liệu theo partition để giảm khối lượng dữ liệu cần xử lý.\n"
-                "Điều này đặc biệt hữu ích khi join theo cột có tính phân vùng tự nhiên (ví dụ ngày, tháng).\n\n"
-                "3. Kết hợp partitionBy và bucketBy (ví dụ):\n"
-                "bigDF.write\n"
-                "    .partitionBy(\"date\")\n"
-                "    .bucketBy(200, \"join_key\")\n"
-                "    .sortBy(\"join_key\")\n"
-                "    .saveAsTable(\"big_table_partitioned_bucketed\")\n\n"
-                "mediumDF.write\n"
-                "    .partitionBy(\"date\")\n"
-                "    .bucketBy(200, \"join_key\")\n"
-                "    .sortBy(\"join_key\")\n"
-                "    .saveAsTable(\"medium_table_partitioned_bucketed\")\n\n"
-                "joinedDF = spark.table(\"big_table_partitioned_bucketed\")\n"
-                "    .join(spark.table(\"medium_table_partitioned_bucketed\"), [\"join_key\"])\n\n"
-                "4. Lọc sớm nhất có thể (Predicate Pushdown)\n"
-                "Áp dụng filter, where, select ngay từ đầu pipeline để loại bỏ dữ liệu dư thừa trước khi join.\n\n"
-                "Ví dụ:\n"
-                "filteredBig = bigDF\n"
-                "    .filter(bigDF.date >= \"2026-01-01\")\n"
-                "    .select(\"join_key\", \"colA\", \"colB\")\n\n"
-                "filteredMedium = mediumDF\n"
-                "    .filter(mediumDF.status == \"active\")\n"
-                "    .select(\"join_key\", \"colX\")\n\n"
-                "joinedDF = filteredBig.join(filteredMedium, [\"join_key\"])"
-            )
-        }
-    ]
     if fid < 0 or fid >= len(DEFAULT_FAQS):
         return "FAQ không tồn tại", 404
     return render_template('faq.html', faq=DEFAULT_FAQS[fid])
